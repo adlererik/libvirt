@@ -1,3 +1,10 @@
+libvirt (3.0.0-4.1) UNRELEASED; urgency=medium
+
+  * Patched to Allow access to dev dri render devices for domains
+    Closes #1337290
+
+ -- Erik Adler <erik.adler@gmail.com>  Wed, 26 Jul 2017 01:00:04 +0200
+
 libvirt (3.0.0-4) unstable; urgency=medium
 
   * [2a23b23] qemu: skip QMP probing of CPU definitions when missing.

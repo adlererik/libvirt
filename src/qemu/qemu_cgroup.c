@@ -695,6 +695,61 @@ qemuTeardownChardevCgroup(virDomainObjPtr vm,
 
 
 static int
+qemuSetupGraphicsCgroup(virDomainObjPtr vm)
+{
+    qemuDomainObjPrivatePtr priv = vm->privateData;
+    const char *dripath = "/dev/dri";
+    char *devpath = NULL;
+    struct dirent *ent;
+    int ret = -1;
+    DIR *dir;
+    int rv, rc;
+    size_t i;
+
+    for (i = 0; i < vm->def->ngraphics; i++) {
+        virDomainGraphicsDefPtr gfx = vm->def->graphics[i];
+        if (gfx->type == VIR_DOMAIN_GRAPHICS_TYPE_SPICE &&
+            gfx->data.spice.gl == VIR_TRISTATE_BOOL_YES)
+            break;
+    }
+
+    if (i == vm->def->ngraphics)
+        return 0;
+
+    if (!(dir = opendir(dripath))) {
+        virReportSystemError(errno,
+                             _("Could not open directory '%s'"),
+                             dripath);
+        return -1;
+    }
+
+    while ((rv = virDirRead(dir, &ent, dripath)) > 0) {
+        if (STRPREFIX(ent->d_name, "render")) {
+            if (virAsprintf(&devpath, "%s/%s", dripath, ent->d_name) < 0)
+                goto cleanup;
+
+            rc = virCgroupAllowDevicePath(priv->cgroup, devpath,
+                                          VIR_CGROUP_DEVICE_RW, false);
+            virDomainAuditCgroupPath(vm, priv->cgroup, "allow", devpath,
+                                     "rw", rc == 0);
+            if (rc < 0)
+                goto cleanup;
+            VIR_FREE(devpath);
+        }
+    }
+
+    if (rv < 0)
+        goto cleanup;
+
+    ret = 0;
+ cleanup:
+    VIR_FREE(devpath);
+    closedir(dir);
+    return ret;
+}
+
+
+static int
 qemuSetupDevicesCgroup(virQEMUDriverPtr driver,
                        virDomainObjPtr vm)
 {
@@ -753,6 +808,9 @@ qemuSetupDevicesCgroup(virQEMUDriverPtr driver,
         if (rv < 0)
             goto cleanup;
     }
+
+    if (qemuSetupGraphicsCgroup(vm) < 0)
+        goto cleanup;
 
     for (i = 0; deviceACL[i] != NULL; i++) {
         if (!virFileExists(deviceACL[i])) {
